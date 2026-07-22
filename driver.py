@@ -21,20 +21,20 @@ def main():
             os.remove(raw_latencies)
             print(f"\nSuccessfully deleted existing '{raw_latencies}'.")
         except OSError as e:
-            print(f"Error deleting {raw_latencies}: {e}")
+            print(f"\nError deleting {raw_latencies}: {e}")
             sys.exit(1)
     else:
-        print(f"{raw_latencies} file not found. Proceeding.")
+        print(f"\n{raw_latencies} file not found. Proceeding.")
 
     if os.path.exists(cleaned_latencies):
         try:
             os.remove(cleaned_latencies)
             print(f"\nSuccessfully deleted existing '{cleaned_latencies}'.")
         except OSError as e:
-            print(f"Error deleting {cleaned_latencies}: {e}")
+            print(f"\nError deleting {cleaned_latencies}: {e}")
             sys.exit(1)
     else:
-        print(f"{cleaned_latencies} file not found. Proceeding.")
+        print(f"\n{cleaned_latencies} file not found. Proceeding.")
 
     # === Compile and run my_echolocation.c to generate new latencies ===
     print(f"\nCompiling '{latency_gathering_script}'...")

@@ -87,8 +87,8 @@ void measure_memory_access_times(volatile int *array, size_t array_size, volatil
 }
 
 int main() {
-    size_t array_size = 1024 * 1024; // 1MB array of 4MB ints = 4MB total
-    size_t eviction_size = 16 * 1024 * 1024; // 64MB (Large enough to exceed L2/SLC)
+    size_t array_size = 8 * 1024 * 1024; // 32MB large enough to exceed cache size
+    size_t eviction_size = 32 * 1024 * 1024; // 128MB eviction buffer large enough to completely sweep and evict cache lines from L2/SLC hierarchy
     int total_iterations = 5000;
     uint64_t min_ns = UINT64_MAX, max_ns = 0;
 
