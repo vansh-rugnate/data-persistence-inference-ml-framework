@@ -129,7 +129,7 @@ int main() {
     // Setup the array to bypass ARM Hardware Prefetcher
     transform_to_shuffled_linked_list(array, array_size);
     
-    // Run the measurement 50 times to get more accurate results (smaller minimum access times)
+    // Run the measurement multiple times to get more accurate results (smaller minimum access times)
     for (int i = 0; i < total_iterations; i++) {
         measure_memory_access_times(array, array_size, eviction_buffer, eviction_size, &min_ns, &max_ns, timer_freq, latency_buffer, i);
     }

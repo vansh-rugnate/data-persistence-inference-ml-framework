@@ -15,26 +15,12 @@ def main():
     plot_script = "plot.py"
     model_script = "model.py"
 
-    # === Delete old latencies if present ===
-    if os.path.exists(raw_latencies):
-        try:
-            os.remove(raw_latencies)
-            print(f"\nSuccessfully deleted existing '{raw_latencies}'.")
-        except OSError as e:
-            print(f"\nError deleting {raw_latencies}: {e}")
-            sys.exit(1)
-    else:
-        print(f"\n{raw_latencies} file not found. Proceeding.")
+    # === Delete old data and plots ===
+    shutil.rmtree("data") # Delete old data folder along with any data
+    os.mkdir("data") # Create new empty data folder
 
-    if os.path.exists(cleaned_latencies):
-        try:
-            os.remove(cleaned_latencies)
-            print(f"\nSuccessfully deleted existing '{cleaned_latencies}'.")
-        except OSError as e:
-            print(f"\nError deleting {cleaned_latencies}: {e}")
-            sys.exit(1)
-    else:
-        print(f"\n{cleaned_latencies} file not found. Proceeding.")
+    shutil.rmtree("plots") # Delete old plots folder along with any plots
+    os.mkdir("plots") # Create new empty plots folder
 
     # === Compile and run my_echolocation.c to generate new latencies ===
     print(f"\nCompiling '{latency_gathering_script}'...")
@@ -75,8 +61,6 @@ def main():
         print(f"Clean Script Stderr:\n{clean_result.stderr}")
 
     # === Run plot.py to generate data plots ===
-    shutil.rmtree("plots") # Delete old plots folder along with any plots
-    os.mkdir("plots") # Create new empty plots folder
     print(f"Running '{plot_script}'...")
     plot_result = subprocess.run(
         [sys.executable, plot_script], 
