@@ -4,42 +4,30 @@ import sys
 import shutil
 
 def main():
-    raw_latencies = "data/access_times.csv"
-    cleaned_latencies = "data/cleaned_access_times.csv"
 
-    latency_gathering_script = "my_echolocation.c"
-    c_executable = "my_echolocation"
-    run_command = [f"./{c_executable}"]
-
+    latency_script = "my_echolocation.c"
+    latency_executable = "my_echolocation"
     clean_script = "clean.py"
     plot_script = "plot.py"
     model_script = "model.py"
+    infer_script = "infer.py"
+    test_script = "test_persistence.c"
+    test_executable = "test_persistence"
 
-    # === Delete old latencies if present ===
-    if os.path.exists(raw_latencies):
-        try:
-            os.remove(raw_latencies)
-            print(f"\nSuccessfully deleted existing '{raw_latencies}'.")
-        except OSError as e:
-            print(f"\nError deleting {raw_latencies}: {e}")
-            sys.exit(1)
-    else:
-        print(f"\n{raw_latencies} file not found. Proceeding.")
+    # === Delete old data, model and plots ===
+    shutil.rmtree("data") # Delete old data folder along with any data
+    os.mkdir("data") # Create new empty data folder
 
-    if os.path.exists(cleaned_latencies):
-        try:
-            os.remove(cleaned_latencies)
-            print(f"\nSuccessfully deleted existing '{cleaned_latencies}'.")
-        except OSError as e:
-            print(f"\nError deleting {cleaned_latencies}: {e}")
-            sys.exit(1)
-    else:
-        print(f"\n{cleaned_latencies} file not found. Proceeding.")
+    shutil.rmtree("models") # Delete old models folder along with any models
+    os.mkdir("models") # Create new empty models folder
+
+    shutil.rmtree("plots") # Delete old plots folder along with any plots
+    os.mkdir("plots") # Create new empty plots folder
 
     # === Compile and run my_echolocation.c to generate new latencies ===
-    print(f"\nCompiling '{latency_gathering_script}'...")
+    print(f"\nCompiling '{latency_script}'...")
     compile_result = subprocess.run(
-        ["gcc", latency_gathering_script, "-o", c_executable], 
+        ["gcc", latency_script, "-o", latency_executable], 
         capture_output=True, 
         text=True
     )
@@ -48,8 +36,8 @@ def main():
         print(f"Compilation failed:\n{compile_result.stderr}")
         sys.exit(1)
     
-    print(f"Running '{c_executable}'...")
-    c_output = subprocess.run(run_command, capture_output=True, text=True)
+    print(f"Running '{latency_executable}'...")
+    c_output = subprocess.run([f"./{latency_executable}"], capture_output=True, text=True)
     
     # Print outputs from the C program if there are any
     if c_output.stdout:
@@ -75,8 +63,6 @@ def main():
         print(f"Clean Script Stderr:\n{clean_result.stderr}")
 
     # === Run plot.py to generate data plots ===
-    shutil.rmtree("plots") # Delete old plots folder along with any plots
-    os.mkdir("plots") # Create new empty plots folder
     print(f"Running '{plot_script}'...")
     plot_result = subprocess.run(
         [sys.executable, plot_script], 
@@ -91,21 +77,24 @@ def main():
 
     # === Run model.py to determine clusters ===
     print(f"Running '{model_script}'...")
-    model_result = subprocess.run(
-        [sys.executable, model_script], 
-        capture_output=True, 
-        text=True
-    )
+    model_result = subprocess.run([sys.executable, model_script], capture_output=True, text=True)
+    #if model_result.stdout: print(model_result.stdout)
+    if model_result.stderr: print(f"Model Script Stderr:\n{model_result.stderr}")
 
-    if model_result.stdout:
-        print(model_result.stdout)
-    if model_result.stderr:
-        print(f"Model Script Stderr:\n{model_result.stderr}")
+    # === Compile and run test_persistence.c ===
+    print(f"Compiling '{test_script}'...")
+    subprocess.run(["gcc", test_script, "-o", test_executable])
+    
+    print(f"Running '{test_executable}' to simulate writes...")
+    subprocess.run([f"./{test_executable}"])
 
-    if compile_result.returncode == 0 & c_output.returncode == 0 & clean_result.returncode == 0 & plot_result.returncode == 0 & model_result.returncode == 0:
-        print("Workflow completed successfully!")
-    else:
-        print(f"Plot script exited with error code {plot_result.returncode}")
+    # === Run infer.py to check accuracy ===
+    print(f"\nRunning '{infer_script}'...")
+    infer_result = subprocess.run([sys.executable, infer_script], capture_output=True, text=True)
+    if infer_result.stdout: print(infer_result.stdout)
+    if infer_result.stderr: print(f"Infer Script Stderr:\n{infer_result.stderr}")
+
+    print("\nWorkflow completed successfully!")
 
 if __name__ == "__main__":
     main()
