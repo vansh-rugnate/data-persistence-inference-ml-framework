@@ -17,15 +17,15 @@ def main():
     # === Delete old data, model and plots ===
     if os.path.exists("data/"):
         shutil.rmtree("data") # Delete old data folder along with any data
-        os.mkdir("data") # Create new empty data folder
+    os.mkdir("data") # Create new empty data folder
 
     if os.path.exists("models/"):
         shutil.rmtree("models") # Delete old models folder along with any models
-        os.mkdir("models") # Create new empty models folder
+    os.mkdir("models") # Create new empty models folder
 
     if os.path.exists("plots/"):
         shutil.rmtree("plots") # Delete old plots folder along with any plots
-        os.mkdir("plots") # Create new empty plots folder
+    os.mkdir("plots") # Create new empty plots folder
 
     # === Compile and run my_echolocation.c to generate new latencies ===
     print(f"\nCompiling '{latency_script}'...")
