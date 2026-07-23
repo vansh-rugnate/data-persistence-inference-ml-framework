@@ -4,13 +4,8 @@ import sys
 import shutil
 
 def main():
-    raw_latencies = "data/access_times.csv"
-    cleaned_latencies = "data/cleaned_access_times.csv"
-
     latency_gathering_script = "my_echolocation.c"
     c_executable = "my_echolocation"
-    run_command = [f"./{c_executable}"]
-
     clean_script = "clean.py"
     plot_script = "plot.py"
     model_script = "model.py"
@@ -35,7 +30,7 @@ def main():
         sys.exit(1)
     
     print(f"Running '{c_executable}'...")
-    c_output = subprocess.run(run_command, capture_output=True, text=True)
+    c_output = subprocess.run([f"./{c_executable}"], capture_output=True, text=True)
     
     # Print outputs from the C program if there are any
     if c_output.stdout:
