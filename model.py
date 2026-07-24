@@ -61,11 +61,26 @@ for c in cluster_info:
     status = mapping[c['cluster_id']]
     print(f"Cluster {c['cluster_id']} [{status}]: Mean = {c['mean']:.2f} ns | Weight = {c['weight']:.2%}")
 
+# --- UPDATED PLOTTING SECTION ---
 plt.figure(figsize=(10, 6))
-sns.histplot(data=df, x='Latency', hue='Cluster', palette='viridis', bins=50, kde=True)
-plt.title('Memory Access Latency Clusters (GMM)')
-plt.xlabel('Latency (ns)')
-plt.ylabel('Frequency')
+
+# 1. Dynamically calculate log-spaced bins based on your data's range
+min_lat = df['Latency'].min()
+max_lat = df['Latency'].max()
+# Ensure minimum is strictly positive to prevent log(0) errors
+min_lat = max(min_lat, 1.0) 
+log_bins = np.logspace(np.log10(min_lat), np.log10(max_lat), 50)
+
+# 2. Feed the custom log_bins into seaborn
+sns.histplot(data=df, x='Latency', hue='Cluster', palette='viridis', bins=log_bins, kde=False)
+
+# 3. Force BOTH axes to render logarithmically
+plt.xscale('log')
+plt.yscale('log') # <--- NEW ADDITION
+
+plt.title('Memory Access Latency Clusters (Gaussian Mixture Model)')
+plt.xlabel('Latency (ns) [Log Scale]')
+plt.ylabel('Frequency [Log Scale]')
 
 os.makedirs('plots', exist_ok=True)
 plt.savefig('plots/clusters.png', bbox_inches='tight')

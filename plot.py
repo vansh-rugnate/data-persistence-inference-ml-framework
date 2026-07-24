@@ -28,7 +28,7 @@ def generate_plots(csv_file, plot_prefix):
         color='blue'
     )
     plt.xscale('log')
-    plt.xlabel('Latency (ns) (Log Scale)')
+    plt.xlabel('Latency (ns) [Log Scale]')
     plt.ylabel('Access Instance')
     plt.title(f'Scatter Plot: Access Instance vs. Latency ({plot_prefix})')
     plt.grid(True, which="both", ls="--", alpha=0.5)
@@ -51,8 +51,8 @@ def generate_plots(csv_file, plot_prefix):
         log=True
     )
     plt.xscale('log')
-    plt.xlabel('Latency (ns) (Log Scale)')
-    plt.ylabel('Frequency (Log Scale)')
+    plt.xlabel('Latency (ns) [Log Scale]')
+    plt.ylabel('Frequency [Log Scale]')
     plt.title(f'Histogram: Frequency vs Latency ({plot_prefix})')
     plt.grid(True, which="both", ls="--", alpha=0.5)
     plt.tight_layout()
