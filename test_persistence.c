@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
+#include <string.h>
 
 static inline uint64_t read_timer(void) {
     uint64_t val;
@@ -15,11 +16,14 @@ static inline uint64_t read_timer_freq(void) {
     return val;
 }
 
-void flush_cache_line(volatile int *evict_buf, size_t size) {
-    volatile int dummy = 0;
-    for (size_t i = 0; i < size; i += 16) {
-        dummy += evict_buf[i];
+// Sequential flush is significantly faster than pointer chasing
+// and perfectly evicts SLC by pushing massive throughput
+void flush_cache(volatile int *evict_buf, size_t size) {
+    // Write to the buffer to ensure it dirties cache lines and forces evictions
+    for (size_t i = 0; i < size; i += 16) { // Step by cache-line approximations
+        evict_buf[i] = evict_buf[i] + 1;
     }
+    asm volatile("dsb sy" ::: "memory");
 }
 
 void transform_to_shuffled_linked_list(volatile int *array, size_t size) {
@@ -40,9 +44,11 @@ void transform_to_shuffled_linked_list(volatile int *array, size_t size) {
 }
 
 int main() {
-    int test_samples = 200;
-    size_t array_size = 8 * 1024 * 1024;
-    size_t eviction_size = 32 * 1024 * 1024;
+    int test_samples = 1000;
+    
+    // Reduced target array to 1MB to ensure it fits easily in L2/SLC
+    size_t array_size = 256 * 1024; // 1MB working set (256K ints)
+    size_t eviction_size = 64 * 1024 * 1024; // 256MB eviction buffer
     uint64_t timer_freq = read_timer_freq();
 
     volatile int *array = NULL;
@@ -50,7 +56,7 @@ int main() {
     posix_memalign((void**)&array, 64, array_size * sizeof(int));
     posix_memalign((void**)&eviction_buffer, 64, eviction_size * sizeof(int));
 
-    for(size_t i = 0; i < eviction_size; i++) eviction_buffer[i] = i;
+    // Only apply the expensive random pointer-chase structure to the target array
     transform_to_shuffled_linked_list(array, array_size);
 
     FILE *file = fopen("data/test_latencies.csv", "w");
@@ -63,18 +69,24 @@ int main() {
         int current_index = 0;
         int batch_size = 10000;
 
+        // WARM-UP LOOP
         for (int i = 0; i < batch_size; i++) current_index = array[current_index];
 
         if (should_persist) {
-            flush_cache_line(eviction_buffer, eviction_size);
+            flush_cache(eviction_buffer, eviction_size);
         }
 
+        current_index = 0;
+
+        // TIMED MEASUREMENT LOOP
         asm volatile("isb" ::: "memory");
         start_ticks = read_timer();
         asm volatile("isb" ::: "memory");
+        
         for (int i = 0; i < batch_size; i++) {
             current_index = array[current_index];
         }
+        
         asm volatile("" : : "g"(current_index) : "memory");
         asm volatile("isb" ::: "memory");
         end_ticks = read_timer();

@@ -18,127 +18,150 @@ static inline uint64_t read_timer_freq(void) {
     return val;
 }
 
-// Performs cache line flush manually
-void flush_cache_line(volatile int *evict_buf, size_t size) {
-    volatile int dummy = 0;
-    for (size_t i = 0; i < size; i += 16) { 
-        dummy += evict_buf[i];
+// Transforms a subset of the array into a linked list to bypass the Hardware Prefetcher
+void transform_to_shuffled_linked_list(volatile int *array, size_t num_elements) {
+    int *indices = malloc(num_elements * sizeof(int));
+    if (!indices) {
+        perror("Failed to allocate indices");
+        exit(EXIT_FAILURE);
     }
-}
-
-// Transforms an array into a linked list to bypass the Hardware Prefetcher
-void transform_to_shuffled_linked_list(volatile int *array, size_t size) {
-    int *indices = malloc(size * sizeof(int));
-    for (size_t i = 0; i < size; i++) indices[i] = i;
     
-    srand(time(NULL));
-    for (size_t i = size - 1; i > 0; i--) {
-        size_t j = rand() % (i + 1);
+    for (size_t i = 0; i < num_elements; i++) {
+        indices[i] = (int)i;
+    }
+    
+    // Shuffle the array elements
+    srand((unsigned int)time(NULL));
+    for (size_t i = num_elements - 1; i > 0; i--) {
+        size_t j = (size_t)rand() % (i + 1);
         int temp = indices[i];
         indices[i] = indices[j];
         indices[j] = temp;
     }
 
-    for (size_t i = 0; i < size - 1; i++) array[indices[i]] = indices[i + 1];
-    array[indices[size - 1]] = indices[0];
+    // Link the shuffled indices to form a cyclic list
+    for (size_t i = 0; i < num_elements - 1; i++) {
+        array[indices[i]] = indices[i + 1];
+    }
+    array[indices[num_elements - 1]] = indices[0];
     
     free(indices);
 }
 
-void measure_memory_access_times(volatile int *array, size_t array_size, volatile int *evict_buf, size_t evict_size, uint64_t *min_ns, uint64_t *max_ns, uint64_t timer_freq, volatile uint64_t *latency_buffer, int iteration) {
-    uint64_t start_ticks, end_ticks;
+// Measures a batch of access times and calculates the average
+static inline uint64_t measure_batch_latency(volatile int *array, int *current_index, int batch_size, uint64_t timer_freq) {
+    asm volatile("isb" ::: "memory");
+    uint64_t start_ticks = read_timer(); // Start timer
+    asm volatile("isb" ::: "memory");
     
-    static int current_index = 0; 
-    int start_index = current_index; // Maintain the starting index for the measurement loop
-    int batch_size = 10000;
-
-    // Warm-up loop to ensure data is stored in cache
+    int idx = *current_index;
     for (int i = 0; i < batch_size; i++) {
-        current_index = array[current_index];
+        idx = array[idx];
     }
-
-    // Alternate between flushing the cache (resulting in main memory access)
-    // And skipping the cache flush (resulting in probable cache hit)
-    int should_flush = iteration % 2;
-    if (should_flush) {
-        flush_cache_line(evict_buf, evict_size);
-    }
-
-    // Reset index back to where the warm-up loop started to measure the exact same elements
-    // To keep the warm-up and measurement loops symmetrical
-    current_index = start_index;
-
-    // Measure how long a batch of reads takes
+    *current_index = idx;
+    
+    asm volatile("" : : "g"(*current_index) : "memory"); // Prevent compiler optimisation
     asm volatile("isb" ::: "memory");
-    start_ticks = read_timer(); // Start timer
+    uint64_t end_ticks = read_timer(); // End timer
     asm volatile("isb" ::: "memory");
-    for (int i = 0; i < batch_size; i++) {
-        current_index = array[current_index];
-    }
-    asm volatile("" : : "g"(current_index) : "memory"); // Prevent compiler optimisation from deleting or reordering the whole loop
-    asm volatile("isb" ::: "memory");
-    end_ticks = read_timer(); // Stop timer
-    asm volatile("isb" ::: "memory");
-
-    // Calculate the average access time
+    
+    // Calculate average of batch measurements
     uint64_t elapsed_ticks = end_ticks - start_ticks;
-    uint64_t elapsed_ns = ((elapsed_ticks * 1000000000ULL) / timer_freq) / batch_size;
-
-    // Update min and max access times
-    if (elapsed_ns < *min_ns) *min_ns = elapsed_ns;
-    if (elapsed_ns > *max_ns) *max_ns = elapsed_ns;
-
-    // Append access times array with measured average latency
-    latency_buffer[iteration] = elapsed_ns;
+    return ((elapsed_ticks * 1000000000ULL) / timer_freq) / (uint64_t)batch_size;
 }
 
-int main() {
-    size_t array_size = 8 * 1024 * 1024; // 32MB - large enough to exceed potentially large cache sizes
-    size_t eviction_size = 32 * 1024 * 1024; // 128MB eviction buffer
-    int total_iterations = 5000;
-    uint64_t min_ns = UINT64_MAX, max_ns = 0;
+// Measures access times for a specific array size
+uint64_t benchmark_array_size(volatile int *array, size_t current_bytes, int batch_size, 
+                             int iterations_per_size, uint64_t timer_freq, FILE *file, 
+                             uint64_t *min_latency, uint64_t *max_latency) {
+    size_t num_elements = current_bytes / sizeof(int);
+    
+    // Prepare the shuffled linked list
+    transform_to_shuffled_linked_list(array, num_elements);
 
-    uint64_t timer_freq = read_timer_freq();
-    if (timer_freq > 0) {
-        printf("ARM System Timer Frequency: %llu Hz (%.2f MHz)\n", timer_freq, timer_freq / 1000000.0);
+    int current_index = 0;
+    uint64_t total_latency_ns = 0;
+
+    // Warm-up loop preloads working set into caches and TLB to ensure desired cache behaviour
+    for (size_t i = 0; i < num_elements; i++) {
+        current_index = array[current_index];
     }
-    else {
+
+    // Measure access times
+    for (int t = 0; t < iterations_per_size; t++) {
+        uint64_t elapsed_ns = measure_batch_latency(array, &current_index, batch_size, timer_freq);
+
+        // Update global min and max latency values
+        if (elapsed_ns < *min_latency) *min_latency = elapsed_ns;
+        if (elapsed_ns > *max_latency) *max_latency = elapsed_ns;
+        
+        // Write access time to CSV
+        fprintf(file, "%zu,%llu\n", current_bytes, elapsed_ns);
+        total_latency_ns += elapsed_ns;
+    }
+
+    return total_latency_ns / (uint64_t)iterations_per_size;
+}
+
+int main(void) {
+    size_t min_bytes = 4 * 1024; // Start at 4KB
+    size_t max_bytes = 64 * 1024 * 1024; // Sweep up to 64MB (inclusive)
+    int batch_size = 10000; // Latency measurements per batch
+    int iterations_per_size = 50000; // Measurements per array size
+
+    uint64_t min_latency_ns = UINT64_MAX;
+    uint64_t max_latency_ns = 0;
+    
+    // Read ARM System Timer Frequency
+    uint64_t timer_freq = read_timer_freq();
+    if (timer_freq == 0) {
         printf("Failed to determine timer frequency.\n");
         return EXIT_FAILURE;
     }
+    printf("ARM System Timer Frequency: %llu Hz (%.2f MHz)\n", timer_freq, (double)timer_freq / 1000000.0);
 
+    // Allocate benchmark buffer once to reuse it
     volatile int *array = NULL;
-    volatile int *eviction_buffer = NULL;
-    volatile uint64_t *latency_buffer = NULL;
-    
-    if (posix_memalign((void**)&array, 64, array_size * sizeof(int)) != 0) return EXIT_FAILURE;
-    if (posix_memalign((void**)&eviction_buffer, 64, eviction_size * sizeof(int)) != 0) return EXIT_FAILURE;
-    if (posix_memalign((void**)&latency_buffer, 64, total_iterations * sizeof(uint64_t)) != 0) return EXIT_FAILURE;
-
-    for(size_t i = 0; i < eviction_size; i++) eviction_buffer[i] = i;
-    for (int i = 0; i < total_iterations; i++) latency_buffer[i] = 0;
-
-    transform_to_shuffled_linked_list(array, array_size);
-    
-    for (int i = 0; i < total_iterations; i++) {
-        measure_memory_access_times(array, array_size, eviction_buffer, eviction_size, &min_ns, &max_ns, timer_freq, latency_buffer, i);
+    if (posix_memalign((void**)&array, 64, max_bytes) != 0) {
+        perror("Memory allocation failed");
+        return EXIT_FAILURE;
     }
 
-    printf("Minimum Access Time: %llu ns\n", min_ns);
-    printf("Maximum Access Time: %llu ns\n", max_ns);
-
-    printf("Writing data to data/access_times.csv\n");
+    // Open CSV file
+    printf("Writing latencies to 'data/access_times.csv'...");
     FILE *file = fopen("data/access_times.csv", "w");
-    if (file) {
-        fprintf(file, "Latency\n");
-        for (int i = 0; i < total_iterations; i++) {
-            fprintf(file, "%llu\n", latency_buffer[i]);
-        }
-        fclose(file);
+    if (!file) {
+        perror("Failed to open file 'data/access_times.csv'");
+        free((void *)array);
+        return EXIT_FAILURE;
     }
+    
+    fprintf(file, "Array_Size_Bytes,Latency\n");
+    printf("\n%-20s | %-15s", "Array Size", "Average Latency");
+    printf("\n---------------------------------------------");
 
-    free((void *)array);
-    free((void *)eviction_buffer);
-    free((void *)latency_buffer);
+    // Measure and record access times for each array size
+    for (size_t current_bytes = min_bytes; current_bytes <= max_bytes; current_bytes *= 2) {
+        uint64_t avg_latency_ns = benchmark_array_size(
+            array, current_bytes, batch_size, iterations_per_size, 
+            timer_freq, file, &min_latency_ns, &max_latency_ns
+        );
+
+        // Output the average access times per array size to the console
+        if (current_bytes < 1024 * 1024) {
+            printf("\n%4zu KB               | %3llu ns", current_bytes / 1024, avg_latency_ns);
+        } else {
+            printf("\n%4zu MB               | %3llu ns", current_bytes / (1024 * 1024), avg_latency_ns);
+        }
+    }
+    printf("\n---------------------------------------------");
+
+    fclose(file); // Close CSV file
+    free((void *)array); // Free allocated memory
+
+    printf("\nMinimum Access Time: %llu ns", min_latency_ns);
+    printf("\nMaximum Access Time: %llu ns", max_latency_ns);
+    printf("\nLatency gathering complete.\n");
+
     return EXIT_SUCCESS;
 }
