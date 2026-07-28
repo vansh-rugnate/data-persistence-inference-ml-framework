@@ -17,7 +17,7 @@ def filter_latency_outliers(input_csv, output_csv):
     X = df[['Latency']].values
 
     # Initialize the LOF model
-    lof = LocalOutlierFactor()
+    lof = LocalOutlierFactor(n_neighbors=100, contamination=0.1, n_jobs=-1)
 
     # Fit the model and predict labels: 1 for inliers, -1 for outliers
     df['Anomaly_Tag'] = lof.fit_predict(X)

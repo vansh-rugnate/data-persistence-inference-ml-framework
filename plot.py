@@ -1,5 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+
 
 def generate_plots(csv_file, plot_prefix):
     # Load dataset
@@ -9,56 +11,82 @@ def generate_plots(csv_file, plot_prefix):
         print(f"\nError: '{csv_file}' not found. NOT generating plots for {csv_file}.")
         return
 
-    print(f"\nGenerating plots for '{csv_file}'...")
+    print(f"Generating plots for '{csv_file}'...")
 
-    # Extract the latency data column
-    latency_data = df['Latency']
+    # Ensure the required columns exist
+    if 'Array_Size_Bytes' not in df.columns or 'Latency' not in df.columns:
+        print(f"Error: Required columns 'Array_Size_Bytes' and 'Latency' not found in {csv_file}.")
+        return
 
-    # Extract the access instance (row number)
-    access_instance = df.index
+    array_sizes = df['Array_Size_Bytes']
+    latencies = df['Latency']
+    access_instance = np.arange(len(df))
 
-    # Generate a Scatter Plot
+    means = df.groupby('Array_Size_Bytes')['Latency'].mean().reset_index()
+
+    # Plot 1
+    # Scatter Plot - Latency vs Array Size
     plt.clf()
-    plt.scatter(
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.scatter(
+        array_sizes,
+        latencies,
+        s=8,
+        alpha=0.4
+    )
+
+    ax.plot(
+        means['Array_Size_Bytes'],
+        means['Latency'],
+        color='red',
+        linewidth=2,
+        marker='o',
+        label='Average Latency'
+    )
+
+    ax.set_xscale('log', base=2)
+    ax.set_yscale('log')
+
+    ax.set_xlabel('Array Size (Bytes) [Log₂ Scale]')
+    ax.set_ylabel('Latency (ns) [Log₁₀ Scale]')
+    ax.set_title(f'Scatter Plot: Latency vs Array Size ({plot_prefix})')
+
+    ax.legend()
+    ax.grid(True, which="both", ls="--", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f'plots/{plot_prefix}_scatter_latency_vs_size.png', dpi=300)
+    plt.close()
+
+    # Plot 2
+    # Scatter Plot - Latency vs Access Instance
+    plt.clf()
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    ax.scatter(
+        latencies,
         access_instance,
-        latency_data,
-        alpha=0.6,
-        s=1,
-        color='blue'
+        s=8,
+        alpha=0.4
     )
-    plt.yscale('log')
-    plt.xlabel('Access Instance (Row Number)')
-    plt.ylabel('Latency (ns)')
-    plt.title(f'Scatter Plot: Latency vs. Access Instance ({plot_prefix})')
-    plt.grid(True, which="both", ls="--", alpha=0.5)
-    plt.tight_layout()
-    plt.savefig(f'plots/{plot_prefix}_scatter_plot.png', dpi=300)
-    plt.clf()
 
-    # Generate a Histogram
-    plt.hist(
-        latency_data,
-        bins=200,
-        alpha=0.75,
-        color='orange',
-        edgecolor='black',
-        log=True
-    )
-    plt.xlabel('Latency (ns)')
-    plt.ylabel('Frequency (Log Scale)')
-    plt.title(f'Histogram: Frequency vs Latency ({plot_prefix})')
-    plt.grid(True, which="both", ls="--", alpha=0.5)
-    plt.tight_layout()
-    plt.savefig(f'plots/{plot_prefix}_histogram.png', dpi=300)
-    plt.clf()
+    ax.set_xscale('log')
 
-    print(f"Saved {plot_prefix} plots successfully.")
+    ax.set_xlabel('Latency (ns) [Log₁₀ Scale]')
+    ax.set_ylabel('Access Instance')
+    ax.set_title(f'Scatter Plot: Latency vs Access Instance ({plot_prefix})')
+
+    ax.grid(True, which="both", ls="--", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f'plots/{plot_prefix}_scatter_latency_vs_access.png', dpi=300)
+    plt.close()
 
 
 # Generate plots for cleaned dataset
-generate_plots("data/cleaned_access_times.csv", "cleaned_access_times")
+generate_plots("data/cleaned_access_times.csv", "cleaned")
+# Generate plots for raw dataset
+generate_plots("data/access_times.csv", "raw")
 
-# Generate plots for uncleaned dataset
-generate_plots("data/access_times.csv", "raw_access_times")
-
-print("\nAll plots saved successfully in 'plots/'.")
+print("Plots saved in 'plots/'.")
