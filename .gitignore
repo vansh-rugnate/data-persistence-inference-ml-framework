@@ -2,5 +2,5 @@
 .DS_Store
 
 # Compiled executables
-my_echolocation
-test_persistence
+benchmark
+generate_test_data
