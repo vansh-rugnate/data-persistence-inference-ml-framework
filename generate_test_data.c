@@ -68,6 +68,7 @@ int main() {
     // Open CSV file
     FILE *file = fopen("data/test_latencies.csv", "w");
     fprintf(file, "Latency,Ground_Truth\n");
+    printf("Writing test data to 'data/test_latencies'");
 
     // Measure a sample of latencies to be used as test data for clustering model
     for (int iter = 0; iter < test_samples; iter++) {

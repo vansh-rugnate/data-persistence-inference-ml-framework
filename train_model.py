@@ -101,4 +101,4 @@ os.makedirs('plots', exist_ok=True)
 plt.savefig('plots/clusters.png', bbox_inches='tight')
 plt.close()
 
-print("\nPlot successfully saved to 'plots/clusters.png'.")
+print("\nCluster plot successfully saved to 'plots/clusters.png'.")
