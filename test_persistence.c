@@ -4,28 +4,29 @@
 #include <time.h>
 #include <string.h>
 
+// Reads the ARM Generic Timer
 static inline uint64_t read_timer(void) {
     uint64_t val;
     asm volatile("mrs %0, cntvct_el0" : "=r" (val));
     return val;
 }
 
+// Reads the ARM Generic Timer frequency
 static inline uint64_t read_timer_freq(void) {
     uint64_t val;
     asm volatile("mrs %0, cntfrq_el0" : "=r" (val));
     return val;
 }
 
-// Sequential flush is significantly faster than pointer chasing
-// and perfectly evicts SLC by pushing massive throughput
+// Manually flushes cache lines by writing to a buffer to force eviction
 void flush_cache(volatile int *evict_buf, size_t size) {
-    // Write to the buffer to ensure it dirties cache lines and forces evictions
-    for (size_t i = 0; i < size; i += 16) { // Step by cache-line approximations
+    for (size_t i = 0; i < size; i += 16) { // Step by typical ARM cache-line sizes (16 ints x 4 bytes = 64 bytes)
         evict_buf[i] = evict_buf[i] + 1;
     }
     asm volatile("dsb sy" ::: "memory");
 }
 
+// Transforms an array into a linked list to bypass the Hardware Prefetcher
 void transform_to_shuffled_linked_list(volatile int *array, size_t size) {
     int *indices = malloc(size * sizeof(int));
     for (size_t i = 0; i < size; i++) indices[i] = i;
@@ -45,23 +46,30 @@ void transform_to_shuffled_linked_list(volatile int *array, size_t size) {
 
 int main() {
     int test_samples = 1000;
+    size_t array_size = 256 * 1024; // 256,000 ints x 4 bytes = 1MB working set (to ensure it fits easily in L2/SLC)
+    size_t eviction_size = 64 * 1024 * 1024; // 64MB x 4 bytes = 256MB eviction buffer (large enough to evict all cache)
     
-    // Reduced target array to 1MB to ensure it fits easily in L2/SLC
-    size_t array_size = 256 * 1024; // 1MB working set (256K ints)
-    size_t eviction_size = 64 * 1024 * 1024; // 256MB eviction buffer
+    // Read ARM System Timer Frequency
     uint64_t timer_freq = read_timer_freq();
+    if (timer_freq == 0) {
+        printf("Failed to determine timer frequency.\n");
+        return EXIT_FAILURE;
+    }
 
+    // Allocate memory
     volatile int *array = NULL;
     volatile int *eviction_buffer = NULL;
     posix_memalign((void**)&array, 64, array_size * sizeof(int));
     posix_memalign((void**)&eviction_buffer, 64, eviction_size * sizeof(int));
 
-    // Only apply the expensive random pointer-chase structure to the target array
+    // Prepare the shuffled linked list
     transform_to_shuffled_linked_list(array, array_size);
 
+    // Open CSV file
     FILE *file = fopen("data/test_latencies.csv", "w");
     fprintf(file, "Latency,Ground_Truth\n");
 
+    // Measure a sample of latencies to be used as test data for clustering model
     for (int iter = 0; iter < test_samples; iter++) {
         int should_persist = iter % 2; 
         
@@ -69,29 +77,29 @@ int main() {
         int current_index = 0;
         int batch_size = 10000;
 
-        // WARM-UP LOOP
+        // Warm-up loop preloads working set into caches and TLB to ensure desired cache behaviour
         for (int i = 0; i < batch_size; i++) current_index = array[current_index];
 
+        // Flush cache lines if measuring main memory latencies
         if (should_persist) {
             flush_cache(eviction_buffer, eviction_size);
         }
 
         current_index = 0;
 
-        // TIMED MEASUREMENT LOOP
+        // Measure access times
         asm volatile("isb" ::: "memory");
-        start_ticks = read_timer();
+        start_ticks = read_timer(); // Start timer
         asm volatile("isb" ::: "memory");
-        
         for (int i = 0; i < batch_size; i++) {
             current_index = array[current_index];
-        }
-        
-        asm volatile("" : : "g"(current_index) : "memory");
+        }        
+        asm volatile("" : : "g"(current_index) : "memory"); // Prevent compiler optimisation
         asm volatile("isb" ::: "memory");
-        end_ticks = read_timer();
+        end_ticks = read_timer(); // End timer
         asm volatile("isb" ::: "memory");
 
+        // Calculate average of batch measurements
         uint64_t elapsed_ticks = end_ticks - start_ticks;
         uint64_t elapsed_ns = ((elapsed_ticks * 1000000000ULL) / timer_freq) / batch_size;
 
@@ -102,8 +110,12 @@ int main() {
         }
     }
 
+    // Close CSV file
     fclose(file);
+
+    // Free allocated memory
     free((void*)array);
     free((void*)eviction_buffer);
+
     return EXIT_SUCCESS;
 }

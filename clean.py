@@ -1,8 +1,9 @@
 import pandas as pd
 from sklearn.neighbors import LocalOutlierFactor
 
+# Removes outliers from raw latency data and saves a new CSV file with the cleaned data
 def filter_latency_outliers(input_csv, output_csv):
-    # Ensure the latency file exists
+    # Load data
     try:
         df = pd.read_csv(input_csv)
     except FileNotFoundError:
@@ -40,5 +41,5 @@ def filter_latency_outliers(input_csv, output_csv):
 if __name__ == "__main__":
     input_file = "data/access_times.csv"
     output_file = "data/cleaned_access_times.csv"
-    # Execute the outlier filtering
+    # Create a new CSV file with outliers removed from the raw latency data
     filter_latency_outliers(input_file, output_file)

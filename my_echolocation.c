@@ -18,7 +18,7 @@ static inline uint64_t read_timer_freq(void) {
     return val;
 }
 
-// Transforms a subset of the array into a linked list to bypass the Hardware Prefetcher
+// Transforms an array into a linked list to bypass the Hardware Prefetcher
 void transform_to_shuffled_linked_list(volatile int *array, size_t num_elements) {
     int *indices = malloc(num_elements * sizeof(int));
     if (!indices) {
